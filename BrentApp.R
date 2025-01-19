@@ -8,9 +8,11 @@ library(tidymodels)
 library(modeltime)
 library(prophet)
 
+# Załaduj plik z kodem modelowania
+source("modeling.R")
+
 ui <- fluidPage(
   useShinyjs(),
-  # Include external CSS
   includeCSS("www/styles.css"),
   
   titlePanel("Oil Price Forecasting with Parameter Adjustment"),
@@ -21,6 +23,8 @@ ui <- fluidPage(
       selectInput("growth", "Growth Type:", 
                   choices = c("linear", "logistic"), selected = "linear"),
       checkboxInput("weekly_seasonality", "Enable Weekly Seasonality", value = FALSE),
+      selectInput("seasonality_type", "Seasonality Type:", 
+                  choices = c("additive", "multiplicative"), selected = "additive"),
       sliderInput("test_size", 
                   "Test Set Size (Months):", 
                   min = 1, max = 24, value = 12, step = 1),
@@ -43,68 +47,46 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   
-  # Load Data
-  brent_prices <- tq_get("BZ=F")
+  # Załaduj dane
+  brent_prices <- load_data()
   
-  # Filter data based on selected date range
+  # Filtruj dane na podstawie wybranego zakresu dat
   brent_prices_filtered <- reactive({
     brent_prices %>%
       filter(date >= input$date_range[1] & date <= input$date_range[2])
   })
   
-  # Reactive splits for train/test
+  # Reactive splits dla danych treningowych i testowych
   splits <- reactive({
-    brent_prices_filtered() %>%
-      time_series_split(assess = paste(input$test_size, "months"), cumulative = TRUE)
+    split_data(brent_prices_filtered(), input$test_size)
   })
   
-  # Reactive Prophet model (without change points)
-  prophet_model <- reactive({
+  # Reactive modele (Prophet i ARIMA)
+  prophet <- reactive({
     req(input$update_model)
-    
-    prophet_reg(
-      mode = "regression",
-      growth = input$growth,
-      season = "additive"
-    ) %>%
-      set_engine("prophet", 
-                 weekly.seasonality = input$weekly_seasonality) %>%
-      fit(close ~ date, training(splits()))
+    prophet_model(input, splits())
   })
   
-  # Reactive ARIMA model
-  arima_model <- reactive({
-    arima_reg(mode = "regression") %>%
-      set_engine("auto_arima") %>%
-      fit(close ~ date, training(splits()))
+  arima <- reactive({
+    arima_model(splits())
   })
   
-  # Calibration and forecast
-  calibrated_models <- reactive({
-    modeltime_table(
-      prophet_model(),
-      arima_model()
-    ) %>%
-      modeltime_calibrate(testing(splits()))
+  # Kalibracja i prognozowanie
+  calibrated_results <- reactive({
+    req(prophet(), arima())
+    calibrate_and_forecast(prophet(), arima(), splits(), brent_prices_filtered(), input$forecast_horizon)
   })
   
-  # Render forecast plot
+  # Renderowanie wykresu prognozy
   output$forecast_plot <- renderPlotly({
-    req(calibrated_models())
-    calibrated_models() %>%
-      modeltime_forecast(
-        actual_data = brent_prices_filtered(),
-        h = paste(input$forecast_horizon, "months")
-      ) %>%
-      plot_modeltime_forecast(.interactive = TRUE)
+    req(calibrated_results())
+    plot_modeltime_forecast(calibrated_results()$forecast, .interactive = TRUE)
   })
   
-  # Render accuracy table
+  # Renderowanie tabeli dokładności
   output$accuracy_table <- renderTable({
-    req(calibrated_models())
-    calibrated_models() %>%
-      modeltime_accuracy() %>%
-      table_modeltime_accuracy(.interactive = FALSE)
+    req(calibrated_results())
+    calibrated_results()$accuracy
   })
 }
 
