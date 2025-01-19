@@ -1,0 +1,68 @@
+/* Custom CSS for styling */
+body {
+  font-family: 'Arial', sans-serif;
+  background-color: #f4f7f6;
+  color: #333;
+}
+
+.container-fluid {
+  padding: 30px;
+}
+
+.well {
+  background-color: #ffffff;
+  border: 1px solid #ddd;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.sidebar-panel {
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.panel-heading {
+  background-color: #006b3f;
+  color: white;
+  padding: 10px 15px;
+  font-size: 18px;
+}
+
+.panel-body {
+  padding: 15px;
+}
+
+.slider .slider-horizontal {
+  background-color: #006b3f;
+}
+
+.btn-primary {
+  background-color: #006b3f;
+  border-color: #006b3f;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #004c2c;
+  border-color: #004c2c;
+}
+
+h3 {
+  color: #006b3f;
+}
+
+.plotly-graph-div {
+  margin-top: 30px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #ffffff;
+  padding: 20px;
+}
+
+.table {
+  margin-top: 20px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
