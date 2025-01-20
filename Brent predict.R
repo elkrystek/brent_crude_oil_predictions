@@ -15,6 +15,7 @@ library(data.table)
 library(tidymodels)
 library(modeltime)
 library(prophet)
+library(jsonlite)
 
 #pobranie danych finansowych dla Brent z Yahoo
 brent_prices <- tq_get("BZ=F")
@@ -26,6 +27,25 @@ brent_prices %>% plot_time_series(date, open, .smooth = T,
                                   .smooth_period = "1 year",
                                 .interactive = T,
                                 .title = "Brent Oil price (USD)")
+
+
+#pobrane z https://www.eia.gov/opendata/browser/crude-oil-imports?frequency=monthly&data=quantity;&facets=destinationId;&destinationId=PT_2704;&start=2014-01&end=2024-10&sortColumn=period;&sortDirection=desc;
+# URL API
+url <- "https://api.eia.gov/v2/crude-oil-imports/data/?frequency=monthly&data[0]=quantity&facets[destinationId][]=PT_2704&start=2014-01&end=2024-10&sort[0][column]=period&sort[0][direction]=desc&offset=0&length=5000&api_key=2hRfeFIdSAj9LfJh3682LchbZrtMiMSVEPlwbPi2"
+
+# Pobranie danych
+data <- curl::curl_fetch_memory(url)
+
+
+# Parsowanie danych JSON
+parsed_data <- fromJSON(rawToChar(data$content))
+
+# Wyświetlenie wyników
+print(parsed_data)
+df <- as.data.frame(parsed_data$response$data)
+head(df)
+
+
 #podział na zbior treningowy i testowy
 splits <- brent_prices %>% time_series_split(assess = "12 months", cumulative = TRUE)
 splits %>% 
