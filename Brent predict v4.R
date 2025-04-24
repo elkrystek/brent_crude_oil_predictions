@@ -63,6 +63,18 @@ brent_prices <- brent_prices %>%
   select(-macd_full) %>%
   drop_na()
 
+# Obliczanie  Bollinger Bands
+brent_prices <- brent_prices %>%
+  mutate(
+    bb = BBands(close, n = 20, sd = 2)
+  ) %>%
+  mutate(
+    bb_up = bb[, "up"],
+    bb_dn = bb[, "dn"],
+    bb_mavg = bb[, "mavg"],
+    bb_pctb  = (close - bb_dn) / (bb_up - bb_dn)  # %B - wartość między 0 a 1
+  ) %>%
+  select(-bb) %>% drop_na()
 
 head(brent_prices)
 # 
@@ -191,16 +203,28 @@ model_prophet_with_MACD_SMA <- prophet_reg(mode = "regression",
   set_engine("prophet", weekly.seasonality = TRUE) %>%
   fit(close ~ date + dxy  + macd_hist + sma_14, training(splits))
 
+
+##bolinger bands
+model_prophet_with_bb <- prophet_reg(
+  mode = "regression",
+  growth = "linear",
+  season = "additive"
+) %>%
+  set_engine("prophet", weekly.seasonality = TRUE) %>%
+  fit(close ~ date + dxy + macd_hist + sma_14  + bb_pctb, training(splits))
+
 #ramka z przyszłymi danymi
  
 future_sma <- rep(tail(training(splits)$sma_14, 1), nrow(future_dates))
 future_macd <- rep(tail(training(splits)$macd_hist, 1), nrow(future_dates))
+future_bb_pctb <- rep(tail(training(splits)$macd_bb_pctb, 1), nrow(future_dates))
 
 future_data <- future_dates %>%
   mutate(
     dxy = future_dxy,
     sma_14 = future_sma,
     macd_hist = future_macd
+    bb_pctb = future_bb_pctb
   )
 
 #------------------------------
@@ -212,6 +236,7 @@ models_table <- modeltime_table(model_prophet,
                                 model_prophet_with_MACD,
                                 model_prophet_with_SMA14,
                                 model_prophet_with_MACD_SMA,
+                                model_prophet_with_bb,
                                 model_knn
                                 )
 
@@ -220,6 +245,7 @@ models_table = update_model_description(models_table,4, "PROPHET - with dxy")
 models_table = update_model_description(models_table,5, "PROPHET - with dxy & MACD")
 models_table = update_model_description(models_table,6, "PROPHET - with dxy & SMA14")
 models_table = update_model_description(models_table,7, "PROPHET - with dxy & MACD & SMA14")
+models_table = update_model_description(models_table,8, "PROPHET - with dxy & MACD & SMA14 & BB")
 models_table
 
 calibration_table <-models_table %>%

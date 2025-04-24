@@ -1,4 +1,7 @@
+install.packages(shiny)
+
 library(shiny)
+
 library(shinyjs)
 library(tidyverse)
 library(tidyquant)

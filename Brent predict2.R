@@ -47,11 +47,25 @@ df <- as.data.frame(parsed_data$response$data)
 head(df)
 
 
+
+oilprice_ts = ts(brent_prices$close)
+oilprice_ts %>% autoplot()
+
+# Decompozycja
+oil_decomposed <- decompose(oilprice_ts)
+
+# Wykres
+plot(oil_decomposed)
+
+
+
 #podział na zbior treningowy i testowy
 splits <- brent_prices %>% time_series_split(assess = "12 months", cumulative = TRUE)
 splits %>% 
   tk_time_series_cv_plan() %>%
   plot_time_series_cv_plan(date,open)
+
+
 #modelowanie przy uzyciy Prophet
 model_prophet <-prophet_reg(mode = "regression",
                             growth="linear",
