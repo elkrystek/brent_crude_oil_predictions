@@ -21,6 +21,33 @@ library(kknn)
 
 library(TTR) #analiza techniczna
 
+simulate_regressor_prophet <- function(data, future_dates, reg_name, periods = NULL) {
+  
+  # Domyślna liczba dni do przodu = nrow(future_dates)
+  if (is.null(periods)) {
+    periods <- nrow(future_dates)
+  }
+  
+  # Tworzenie danych wejściowych dla Propheta
+  reg_data <- data %>%
+    select(ds = date, y = !!sym(reg_name)) %>%
+    drop_na()
+  
+  # Dopasowanie modelu Prophet
+  model <- prophet(reg_data, daily.seasonality = TRUE)
+  
+  # Tworzenie przyszłych dat
+  future <- make_future_dataframe(model, periods = periods)
+  
+  # Prognozowanie
+  forecast <- predict(model, future)
+  
+  # Wyciągnięcie tylko prognoz na przyszłość
+  forecast_tail <- tail(forecast$yhat, periods)
+  
+  return(forecast_tail)
+}
+
 #pobranie danych finansowych dla Brent z Yahoo
 brent_prices <- tq_get("BZ=F")
 brent_prices
@@ -133,28 +160,30 @@ future_dates <- tibble(
 future_dxy100 <- rep(100, nrow(future_dates))
 
 #>>>>>>>>>>>>>>>>>>>>>>>>>
-#mini prophet dla dxy, zeby nie zakladać 100
-#Przygotowanie danych dla Prophet
-dxy_df <- brent_prices %>%
-  select(ds = date, y = dxy) %>%
-  drop_na()
-
-# Dopasowanie modelu Prophet do DXY
-model_dxy <- prophet(dxy_df, daily.seasonality = TRUE)
-
-# Tworzymy ramkę z przyszłymi datami
-future_dxy_dates <- make_future_dataframe(model_dxy, periods = nrow(future_dates))
-
-# Prognozujemy DXY
-forecast_dxy <- predict(model_dxy, future_dxy_dates)
-
-# Wyciągamy tylko prognozowany okres (dopasuj zakres!)
-simulated_dxy <- tail(forecast_dxy$yhat, nrow(future_dates))
-
-# Dodajemy do future_data
-future_data <- future_data %>%
-  mutate(dxy = simulated_dxy)
+# #mini prophet dla dxy, zeby nie zakladać 100
+# #Przygotowanie danych dla Prophet
+# dxy_df <- brent_prices %>%
+#   select(ds = date, y = dxy) %>%
+#   drop_na()
+# 
+# # Dopasowanie modelu Prophet do DXY
+# model_dxy <- prophet(dxy_df, daily.seasonality = TRUE)
+# 
+# # Tworzymy ramkę z przyszłymi datami
+# future_dxy_dates <- make_future_dataframe(model_dxy, periods = nrow(future_dates))
+# 
+# # Prognozujemy DXY
+# forecast_dxy <- predict(model_dxy, future_dxy_dates)
+# 
+# # Wyciągamy tylko prognozowany okres (dopasuj zakres!)
+# simulated_dxy <- tail(forecast_dxy$yhat, nrow(future_dates))
+# 
+# # Dodajemy do future_data
+# future_data <- future_data %>%
+#   mutate(dxy = simulated_dxy)
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+
 # Dodajemy regresor dollar index
 # future_data_dxy <- future_dates %>%
 #   mutate(dxy = future_dxy)
@@ -249,45 +278,10 @@ future_data <- future_dates %>%
     macd_hist = future_macd,
     bb_pctb = future_bb_pctb
   )
+#!!!!!!!!
+# Symulacja przyszłych wartości DXY
+simulated_dxy <- simulate_regressor_prophet(brent_prices, future_dates, "dxy")
 
-#------------------------------
-#kalibracja
-models_table <- modeltime_table(model_prophet,
-                                model_arima,
-                                model_prophet_with_holidays,
-                                model_prophet_with_dxy,
-                                model_prophet_with_MACD,
-                                model_prophet_with_SMA14,
-                                model_prophet_with_MACD_SMA,
-                                model_prophet_with_bb,
-                                model_knn
-                                )
-
-models_table = update_model_description(models_table,3, "PROPHET - Holidays")
-models_table = update_model_description(models_table,4, "PROPHET - with dxy")
-models_table = update_model_description(models_table,5, "PROPHET - with dxy & MACD")
-models_table = update_model_description(models_table,6, "PROPHET - with dxy & SMA14")
-models_table = update_model_description(models_table,7, "PROPHET - with dxy & MACD & SMA14")
-models_table = update_model_description(models_table,8, "PROPHET - with dxy & MACD & SMA14 & BB")
-models_table
-
-calibration_table <-models_table %>%
-  modeltime_calibrate(testing(splits))
-calibration_table
-#forecast
-calibration_table %>%
-  modeltime_forecast(new_data = testing(splits),actual_data = brent_prices) %>%
-  # modeltime_forecast(new_data = future_data, actual_data = brent_prices) %>%
-  plot_modeltime_forecast(.interactive = T)
-calibration_table %>%
-  modeltime_accuracy(new_data = testing(splits),actual_data = brent_prices) %>%
-  table_modeltime_accuracy(.interactive = F)
-
-
-#refit
-calibration_table %>%
-  modeltime_refit(brent_prices) %>%
-  modeltime_forecast(new_data = future_data, actual_data = brent_prices) %>%
-  plot_modeltime_forecast(.interactive = T, .plotly_slider = T, .smooth = FALSE)
-
-
+# Symulacja dla MACD
+simulated_macd <- simulate_regressor_prophet(brent_prices, future_dates, "macd_hist")
+   
