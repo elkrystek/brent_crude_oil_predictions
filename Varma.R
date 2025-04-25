@@ -1,55 +1,76 @@
-# 📦 Pakiety
-install.packages("MTS")   # tylko raz
-library(MTS)
-
-library(tidyquant)
 library(tidyverse)
-library(MTS)
-library(urca)
+library(tidyquant)
+library(lubridate)
+library(modeltime)
+library(prophet)
+library(timetk)
 
-# 📥 Dane Brent (już masz)
-brent <- tq_get("BZ=F", from = "2014-01-01", to = "2024-10-01") %>%
-  select(date, brent = close)
+# Dane
+brent_prices <- tq_get("BZ=F")
+dolar_index <- tq_get("DX-Y.NYB")
 
-# 📥 Dane Dollar Index (DXY)
-dxy <- tq_get("DX-Y.NYB", from = "2014-01-01", to = "2024-10-01") %>%
-  select(date, dxy = close)
+# Przygotowanie danych
+df_prophet <- left_join(
+  brent_prices %>% mutate(date = as.Date(date)) %>% select(date, price = close),
+  dolar_index %>% mutate(date = as.Date(date)) %>% select(date, dxy = close),
+  by = "date"
+) %>%
+  drop_na() %>%
+  rename(ds = date, y = price)
 
-# 🔗 Połączenie danych
-data_joined <- left_join(brent, dxy, by = "date") %>%
-  drop_na()
+# Święta: COVID + wojna (przykład)
+holidays_df <- tibble(
+  holiday = c("covid", "ukraine_war"),
+  ds = as.Date(c("2020-03-15", "2022-02-24")),
+  lower_window = 0,
+  upper_window = 60
+)
 
-# 📈 Wstępny wykres
-data_joined %>%
-  pivot_longer(-date, names_to = "instrument", values_to = "value") %>%
-  ggplot(aes(x = date, y = value, color = instrument)) +
-  geom_line() +
-  theme_minimal() +
-  labs(title = "Brent vs Dollar Index (DXY)", y = "Cena", x = "Data")
+# Podział na zbiór treningowy/testowy
+splits <- time_series_split(df_prophet, assess = "3 months", cumulative = TRUE)
 
-# 🧪 Sprawdzenie stacjonarności
-adf_b <- summary(ur.df(data_joined$brent, type = "drift"))
-adf_d <- summary(ur.df(data_joined$dxy, type = "drift"))
-print(adf_b)
-print(adf_d)
+# === Model bez holidays ===
+model_prophet <- prophet_reg(
+  mode = "regression",
+  growth = "linear",
+  season = "additive"
+) %>%
+  set_engine("prophet") %>%
+  fit(y ~ ds + dxy, data = training(splits))
 
-# 🔁 Różnicowanie (1. różnica)
-ts_data <- ts(data_joined[, -1], frequency = 12)
-ts_diff <- diff(ts_data)
+# === Model z holidays ===
+model_prophet_holidays <- prophet_reg(
+  mode = "regression",
+  growth = "linear",
+  season = "additive"
+) %>%
+  set_engine("prophet", holidays = holidays_df) %>%
+  fit(y ~ ds + dxy, data = training(splits))
 
-# 🔍 Wybór parametrów VARMA
-Eccm(ts_diff, maxp = 5, maxq = 6)
+# === Tabela modeli ===
+models_table <- modeltime_table(
+  model_prophet,
+  model_prophet_holidays
+) %>%
+  update_model_description(1, "PROPHET - NO Holidays") %>%
+  update_model_description(2, "PROPHET - Holidays")
 
-# 📊 Dopasowanie modelu VARMA
-model_varma <- VARMA(ts_diff, p = 4, q = 6)
-summary(model_varma)
-cor(ts_data)
-# 🔮 Prognoza
-forecast <- predict(model_varma, h = 12)
+# === Kalibracja ===
+calibration_table <- models_table %>%
+  modeltime_calibrate(testing(splits))
 
-# 📉 Wykres prognoz (dla każdej zmiennej osobno)
-par(mfrow = c(2, 1))
-ts.plot(forecast$pred[, 1], forecast$se[, 1], col = c("blue", "red"),
-        main = "Prognoza: Brent (różnicowana)")
-ts.plot(forecast$pred[, 2], forecast$se[, 2], col = c("green", "orange"),
-        main = "Prognoza: DXY (różnicowana)")
+# === Prognoza + wykres ===
+calibration_table %>%
+  modeltime_forecast(
+    new_data = testing(splits),
+    actual_data = df_prophet
+  ) %>%
+  plot_modeltime_forecast(.interactive = TRUE)
+
+# === Dokładność ===
+calibration_table %>%
+  modeltime_accuracy() %>%
+  table_modeltime_accuracy(.interactive = FALSE)
+
+model_prophet_holidays$fit$fit$fit$holidays
+

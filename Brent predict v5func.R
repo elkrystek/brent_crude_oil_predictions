@@ -60,6 +60,7 @@ brent_prices %>% plot_time_series(date, close, .smooth = T,
                                 .title = "Brent Oil price (USD)")
 
 
+
 #dodanie dodatkowej zmiennej:
 # Pobranie danych dla Dollar Index
 dolar_index <- tq_get("DX-Y.NYB")
@@ -74,6 +75,26 @@ brent_prices <- left_join(brent_prices, dolar_index, by = "date")
 brent_prices <- left_join(brent_prices, dolar_index, by = "date") %>%
   select(date= date, close = close.x, dxy = close.y) %>%
   drop_na()
+
+#sprawdzenie stacjonarnosci
+library(tseries)
+adf.test(brent_prices$close, alternative = "stationary")
+
+# data:  brent_prices$close
+# Dickey-Fuller = -2.3296, Lag order = 13, p-value = 0.4388
+# alternative hypothesis: stationary
+# d=0 dla Arima można przyjąć
+
+# #przygotowanie normalizacji na potrzeby KNN
+# # Dodajemy znormalizowaną kolumnę
+# brent_prices <- brent_prices %>%
+#   mutate(close_std = scale(close)[,1])
+# # Denormalizacja (przywrócenie do oryginalnej skali)
+# denormalize <- function(scaled_values, mean_value, sd_value) {
+#   return(scaled_values * sd_value + mean_value)
+# }
+# 
+# #aktualnie nie da się rozsądnie denormalizować danych w tidy models (trzebaby przepisać od nowa) https://stackoverflow.com/questions/61767786/how-to-de-normalize-data-with-tidy-models-in-r
 
 #dodanie  analizy technicznej
 brent_prices <- brent_prices %>%
@@ -90,6 +111,8 @@ brent_prices <- brent_prices %>%
   ) %>%
   select(-macd_full) %>%
   drop_na()
+
+
 
 # Obliczanie  Bollinger Bands
 brent_prices <- brent_prices %>%
@@ -159,7 +182,7 @@ future_dates <- tibble(
 # Zakładamy np. że DXY utrzyma się na poziomie 100 
 future_dxy100 <- rep(100, nrow(future_dates))
 
-#>>>>>>>>>>>>>>>>>>>>>>>>>
+#>>>>>>>>>>>>>>>>>>>>>>>>> aktualnie zastapione funkcja
 # #mini prophet dla dxy, zeby nie zakladać 100
 # #Przygotowanie danych dla Prophet
 # dxy_df <- brent_prices %>%
@@ -191,7 +214,7 @@ future_dxy100 <- rep(100, nrow(future_dates))
 #modelowanie przy uzyciy Arima 
 model_arima <- arima_reg(mode = "regression",
                          seasonal_period = 12) %>%
-  set_engine("auto_arima", stepwise = FALSE, approximation = TRUE)%>%
+  set_engine("auto_arima", stepwise = FALSE, approximation = FALSE)%>%
   fit(close ~ date, training(splits))
 
 #proba knn
@@ -284,4 +307,55 @@ simulated_dxy <- simulate_regressor_prophet(brent_prices, future_dates, "dxy")
 
 # Symulacja dla MACD
 simulated_macd <- simulate_regressor_prophet(brent_prices, future_dates, "macd_hist")
-   
+simulated_sma14 <- simulate_regressor_prophet(brent_prices, future_dates, "sma_14")
+
+
+# Dodanie do future_data
+future_data <- future_data %>%
+  mutate(
+    dxy = simulated_dxy,
+    macd_hist = simulated_macd,
+    sma_14 = simulated_sma14
+  )
+
+#------------------------------
+#kalibracja
+models_table <- modeltime_table(model_prophet,
+                                model_arima,
+                                model_prophet_with_holidays,
+                                model_prophet_with_dxy,
+                                model_prophet_with_MACD,
+                                model_prophet_with_SMA14,
+                                model_prophet_with_MACD_SMA,
+                                model_prophet_with_bb,
+                                model_knn
+                                )
+
+models_table = update_model_description(models_table,3, "PROPHET - Holidays")
+models_table = update_model_description(models_table,4, "PROPHET - with dxy")
+models_table = update_model_description(models_table,5, "PROPHET - with dxy & MACD")
+models_table = update_model_description(models_table,6, "PROPHET - with dxy & SMA14")
+models_table = update_model_description(models_table,7, "PROPHET - with dxy & MACD & SMA14")
+models_table = update_model_description(models_table,8, "PROPHET - with dxy & MACD & SMA14 & BB")
+models_table
+
+calibration_table <-models_table %>%
+  modeltime_calibrate(testing(splits))
+calibration_table
+#forecast
+calibration_table %>%
+  modeltime_forecast(new_data = testing(splits),actual_data = brent_prices) %>%
+  # modeltime_forecast(new_data = future_data, actual_data = brent_prices) %>%
+  plot_modeltime_forecast(.interactive = T)
+calibration_table %>%
+  modeltime_accuracy(new_data = testing(splits),actual_data = brent_prices) %>%
+  table_modeltime_accuracy(.interactive = F)
+
+
+#refit
+calibration_table %>%
+  modeltime_refit(brent_prices) %>%
+  modeltime_forecast(new_data = future_data, actual_data = brent_prices) %>%
+  plot_modeltime_forecast(.interactive = T, .plotly_slider = T, .smooth = FALSE)
+
+
