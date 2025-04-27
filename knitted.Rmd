@@ -2,9 +2,9 @@
 title: "Prognoza wyceny ropy Brent"
 author: "Krystian & Pola"
 output:
-  pdf_document: default
   html_document:
     df_print: paged
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
