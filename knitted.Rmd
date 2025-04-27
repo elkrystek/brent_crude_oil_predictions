@@ -72,11 +72,15 @@ brent_prices <- brent_prices %>%
   drop_na()
 ```
 
-# 4. Stacjonarność szeregu
+# 4. Stacjonarność szeregu i trend
 
 ```{r}
 adf.test(brent_prices$close, alternative = "stationary")
 ```
+
+### Dodanie okresów specjalnych
+
+W celu uwzględnienia wpływu nadzwyczajnych wydarzeń na ceny ropy Brent, do modelu Prophet dodano specjalne okresy obejmujące okres pandemii COVID-19 oraz wybuch wojny w Ukrainie.
 
 ```{r}
 # Okres pandemii COVID-19 (marzec 2020 - czerwiec 2021)
@@ -98,6 +102,14 @@ war_dates <- tibble(
 # Połączenie wszystkich wydarzeń w jedną tabelę
 holidays_df <- bind_rows(covid_dates, war_dates)
 ```
+
+Uwagi:
+
+-   Święta zostały przekazane do modelu przez argument holidays w set_engine().
+
+-   Parametr prior_scale_holidays = 20 zwiększa wpływ świąt na wynik modelu.
+
+-   Aktualna implementacja Prophet w tidymodels może nie w pełni wspierać wszystkie funkcjonalności holidays. Oceniono w innym skrypcie i okazało się że holidays pogarszają wyniki.
 
 # 5. Inżynieria cech: analiza techniczna
 
