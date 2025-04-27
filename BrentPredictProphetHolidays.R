@@ -101,7 +101,3 @@ print(metrics)
 plot_cross_validation_metric(cv_results, metric = "mape")
 
 
-# użycie ggplot do porównania prognoz
-library(ggplot2)
-
- n
